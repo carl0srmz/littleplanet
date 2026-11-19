@@ -116,7 +116,7 @@ jobs:
             build/littleplanet-windows-portable.zip
 
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       SDL_VERSION: 3.4.16
     steps:
