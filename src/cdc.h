@@ -41,7 +41,7 @@ void cd_seek(u32 lba);
 void cdc_stop(void);
 bool cdc_stat(void);                 // a sector is waiting in the buffer
 bool cdc_read(u32 *header);          // start transferring the oldest sector
-void cdc_trn(u8 *dst, u8 *header);   // copy the current sector (CDCTRN)
+bool cdc_trn(u8 *dst, u8 *header);   // copy the current sector (CDCTRN); false if there's none
 void cdc_ack(void);
 void cd_drvinit(void);
 int cd_bios_status(void);

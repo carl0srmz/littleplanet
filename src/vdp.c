@@ -266,7 +266,34 @@ static void render_plane(u8 *out, int line, bool plane_a, int win_from, int win_
   bool col_vs = R(11) & 4;
   u32 last_ea = 0xffffffff;
   u16 entry = 0;
+  // the screen itself: no widescreen hooks, so each tile row is decoded once into its 8 pixels
+  {
+    int vsi = plane_a ? 0 : 1, vs0 = vdp.vsram[vsi];
+    u32 last_key = 0xffffffff;
+    u8 row_px[8] = {0};
+    u8 *o = out + vdp_exl;
+    for (int x = 0; x < w;) {
+      if (plane_a && x >= win_from && x < win_to) { x = win_to; continue; }
+      int vs = col_vs ? vdp.vsram[(x >> 4) * 2 + vsi] : vs0;
+      int y = (line + vs) & (px_h - 1);
+      int xp = (x - hscroll) & (px_w - 1);
+      u32 ea = (nt + ((y >> 3) * cells_h + (xp >> 3)) * 2) & 0xffff;
+      u32 key = ea << 3 | (y & 7);
+      if (key != last_key) {
+        u16 e = vdp.vram[ea] << 8 | vdp.vram[ea | 1];
+        for (int c = 0; c < 8; c++) row_px[c] = tile_px(e, y & 7, c);
+        last_key = key;
+      }
+      // the rest of this tile row, up to the screen's edge, the window, or the 2-cell column's edge
+      int c0 = xp & 7, end = x + (8 - c0);
+      if (end > w) end = w;
+      if (plane_a && x < win_from && end > win_from) end = win_from;
+      if (col_vs && end > ((x | 15) + 1)) end = (x | 15) + 1;
+      for (int k = 0; x < end; k++, x++) o[x] = row_px[c0 + k];
+    }
+  }
   for (int x = -vdp_exl; x < w + vdp_exr; x++) {
+    if (x == 0) { x = w - 1; continue; }   // (drawn above)
     if (plane_a && x >= win_from && x < win_to) continue;
     int col = x < 0 ? 0 : x >= w ? (w >> 4) - 1 : x >> 4;   // (past the sides: the nearest column's)
     int vs = vdp.vsram[(col_vs ? col * 2 : 0) + (plane_a ? 0 : 1)];
@@ -389,6 +416,8 @@ void vdp_line(int line) {
   if (win_to > win_from) render_window(lb_a, line, win_from, win_to);   // (the window stays within the screen)
   render_sprites(lb_s, line);
   bool sh = SH_MODE;
+  u32 lut[3][64];   // this line's palette, per mode (CRAM can't change while the line is drawn)
+  for (int m = 0; m < (sh ? 3 : 1); m++) for (int i = 0; i < 64; i++) lut[m][i] = pal_rgb[m][cram_index(vdp.cram[i])];
   for (int x = 0; x < W; x++) {
     u8 a = lb_a[x], b = lb_b[x], s = lb_s[x];
     // planes alone, low to high: B low, A low, B high, A high
@@ -410,7 +439,7 @@ void vdp_line(int line) {
       else if ((s & 63) == 0x3f) { pix = plane; mode = M_SHADOW; }
       else { pix = s & 63; mode = ((s & 0x40) || (s & 0x0f) == 0x0e) ? M_NORMAL : base; }
     }
-    dst[x] = pal_rgb[mode][cram_index(vdp.cram[pix])];
+    dst[x] = lut[mode][pix];
   }
 }
 

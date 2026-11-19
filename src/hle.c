@@ -194,16 +194,21 @@ u8 *bram_file(const char *name, int *bytes) {   // a file's data, to change in p
   return bfiles[i].data;
 }
 void bram_touch(void) { bram_changed = true; }
+// written to a temporary file and moved over the old one: a crash or a full disk mid-write leaves the
+// previous saves intact, and the data stays marked unsaved (tried again later) if it didn't get there
 bool bram_save(const char *path) {
-  FILE *f = u8fopen(path, "wb");
+  char tmp[1100];
+  snprintf(tmp, sizeof tmp, "%s.tmp", path);
+  FILE *f = u8fopen(tmp, "wb");
   if (!f) return false;
-  fwrite("LPBRAM01", 1, 8, f);
-  fwrite(&bfile_count, 4, 1, f);
-  for (int i = 0; i < bfile_count; i++) {
-    fwrite(bfiles[i].name, 1, 11, f); fwrite(&bfiles[i].mode, 1, 1, f); fwrite(&bfiles[i].blocks, 2, 1, f);
-    fwrite(bfiles[i].data, 64, bfiles[i].blocks, f);
-  }
-  fclose(f);
+  bool ok = fwrite("LPBRAM01", 1, 8, f) == 8 && fwrite(&bfile_count, 4, 1, f) == 1;
+  for (int i = 0; ok && i < bfile_count; i++)
+    ok = fwrite(bfiles[i].name, 1, 11, f) == 11 && fwrite(&bfiles[i].mode, 1, 1, f) == 1 && fwrite(&bfiles[i].blocks, 2, 1, f) == 1 &&
+         fwrite(bfiles[i].data, 64, bfiles[i].blocks, f) == bfiles[i].blocks;
+  ok = fflush(f) == 0 && ok;
+  ok = fclose(f) == 0 && ok;
+  if (ok) ok = u8rename(tmp, path);
+  if (!ok) { u8remove(tmp); return false; }
   bram_changed = false;
   return true;
 }
@@ -368,8 +373,8 @@ static void cdbios(M68k *c) {
     break;
   }
   case 0x8c: {                                                   // CDCTRN
-    u8 buf[2048], hdr[4];
-    cdc_trn(buf, hdr);
+    u8 buf[2048] = {0}, hdr[4];
+    if (!cdc_trn(buf, hdr)) { set_carry(c, true); break; }   // nothing to transfer: carry, as the BIOS reports it
     if (getenv("LP_CDCLOG")) {
       u32 lba = ((hdr[0] >> 4) * 10 + (hdr[0] & 15)) * 4500 + ((hdr[1] >> 4) * 10 + (hdr[1] & 15)) * 75 + (hdr[2] >> 4) * 10 + (hdr[2] & 15) - 150;
       fprintf(stderr, "cdctrn lba %u -> %06x\n", lba, c->r[8]);

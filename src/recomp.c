@@ -29,9 +29,13 @@ static struct { u32 key, val; } cache[CACHE];
 static bool find(M68k *c, u32 *val) {
   u32 key = (u32)c->id << 24 | (c->pc & 0xffffff);
   unsigned h = (key ^ key >> 14) & (CACHE - 1);
-  if (cache[h].key == key && cache[h].val != ~0u && matches(c, cache[h].val)) { *val = cache[h].val; return true; }
+  if (cache[h].key == key) {
+    if (cache[h].val == ~0u) return false;   // nothing was compiled at this address (that never changes)
+    if (matches(c, cache[h].val)) { *val = cache[h].val; return true; }
+  }
   int lo = 0, hi = rc_nentries;
   while (lo < hi) { int m = (lo + hi) / 2; if (rc_keys[m] < key) lo = m + 1; else hi = m; }
+  if (lo >= rc_nentries || rc_keys[lo] != key) { cache[h].key = key; cache[h].val = ~0u; return false; }
   for (int i = lo; i < rc_nentries && rc_keys[i] == key; i++)
     if (matches(c, rc_vals[i])) { cache[h].key = key; cache[h].val = rc_vals[i]; *val = rc_vals[i]; return true; }
   return false;

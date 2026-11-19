@@ -24,6 +24,24 @@ FILE *u8fopen(const char *path, const char *mode) {
 #endif
 }
 
+bool u8rename(const char *from, const char *to) {
+#ifdef _WIN32
+  wchar_t wf[1024], wt[1024];
+  if (!MultiByteToWideChar(CP_UTF8, 0, from, -1, wf, 1024) || !MultiByteToWideChar(CP_UTF8, 0, to, -1, wt, 1024)) return false;
+  return MoveFileExW(wf, wt, MOVEFILE_REPLACE_EXISTING) != 0;
+#else
+  return rename(from, to) == 0;
+#endif
+}
+void u8remove(const char *path) {
+#ifdef _WIN32
+  wchar_t wp[1024];
+  if (MultiByteToWideChar(CP_UTF8, 0, path, -1, wp, 1024)) DeleteFileW(wp);
+#else
+  remove(path);
+#endif
+}
+
 static long long fsize(FILE *f) {
 #ifdef _WIN32
   _fseeki64(f, 0, SEEK_END); long long n = _ftelli64(f); _fseeki64(f, 0, SEEK_SET);
@@ -134,7 +152,7 @@ static int open_source(const char *path, char *err, int errlen) {
       u8 ch[8];
       while (fread(ch, 1, 8, s->f) == 8) {
         u32 n = ch[4] | ch[5] << 8 | ch[6] << 16 | (u32)ch[7] << 24;
-        if (!memcmp(ch, "fmt ", 4)) {
+        if (!memcmp(ch, "fmt ", 4) && n >= 16) {
           u8 fmt[16];
           if (fread(fmt, 1, 16, s->f) != 16) break;
           s->channels = fmt[2];
@@ -154,12 +172,13 @@ static int open_source(const char *path, char *err, int errlen) {
 }
 
 static void add_ext(u32 lba, u32 count, int src, u64 off, u16 secsize, u8 type) {
-  if (!count || next >= 256) return;
+  if (!count || src < 0 || next >= 256) return;
   ext[next++] = (Extent){lba, count, src, off, secsize, type};
 }
 
 static int silence_src(void) {
   for (int i = 0; i < nsrc; i++) if (srcs[i].kind == SRC_SILENCE) return i;
+  if (nsrc >= 100) return -1;   // (add_ext then has no source to read: the gap reads as nothing)
   srcs[nsrc].kind = SRC_SILENCE;
   return nsrc++;
 }
@@ -293,6 +312,7 @@ static bool open_chd(const char *path, char *err, int errlen) {
   if (e != CHDERR_NONE) { fclose(f); err_set(err, errlen, "not a valid CHD: %s", chd_error_string(e)); chd = NULL; return false; }
   const chd_header *h = chd_get_header(chd);
   chd_hunk_frames = h->hunkbytes / 2448;
+  if (!chd_hunk_frames) { err_set(err, errlen, "%s", "not a CD CHD"); return false; }
   chd_hunk = malloc(h->hunkbytes);
   srcs[nsrc].kind = SRC_CHD;
   int s = nsrc++;
@@ -499,8 +519,9 @@ static int iso_dir(u32 lba, u32 size, IsoFile *out, int max, const char *want, I
     if (!disc_read_data(lba + o / 2048, sec)) return n;
     for (u32 i = 0; i < 2048;) {
       u8 l = sec[i];
-      if (!l) break;
+      if (!l || l < 34 || i + l > 2048) break;   // (a malformed record would read past the sector)
       u8 nl = sec[i + 32];
+      if (33 + nl > l) break;
       if (!(nl == 1 && (sec[i + 33] == 0 || sec[i + 33] == 1))) {
         IsoFile f;
         int k = 0;

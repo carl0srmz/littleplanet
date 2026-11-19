@@ -33,17 +33,40 @@ void rs_init(Resampler *r, double in_rate, double out_rate) {
 
 void rs_free(Resampler *r) { free(r->table); r->table = NULL; }
 
+// The taps are 1 input sample apart, so on each side of the output position they all sit at the same
+// fraction between two table points: |pos - n| * RS_RES is that side's first offset plus RS_RES per tap
+// (all exact in double), so the interpolation weight and the table index step are worked out once a side.
+// Same taps, same order, same arithmetic per tap as the straightforward loop: bit-identical output.
 void rs_pop(Resampler *r, float *l, float *rr) {
   double p = r->pos;
   long base = (long)floor(p);
+  double frac = p - (double)base;
+  const float *t = r->table, *ringl = r->ring[0], *ringr = r->ring[1];
+  const int half = r->half;
   float al = 0, ar = 0;
-  for (long n = base - r->half + 1; n <= base + r->half; n++) {
-    double x = fabs(p - (double)n) * RS_RES;
-    int i = (int)x;
-    float f = (float)(x - i);
-    float w = r->table[i] + (r->table[i + 1] - r->table[i]) * f;
-    al += w * r->ring[0][n & (RS_RING - 1)];
-    ar += w * r->ring[1][n & (RS_RING - 1)];
+  {   // n = base - half + 1 .. base: distance frac + k, k = half - 1 .. 0
+    double x0 = frac * RS_RES;
+    int i0 = (int)x0;
+    float f = (float)(x0 - i0);
+    long n = base - half + 1;
+    for (int k = half - 1; k >= 0; k--, n++) {
+      int i = i0 + k * RS_RES;
+      float w = t[i] + (t[i + 1] - t[i]) * f;
+      al += w * ringl[n & (RS_RING - 1)];
+      ar += w * ringr[n & (RS_RING - 1)];
+    }
+  }
+  {   // n = base + 1 .. base + half: distance (1 - frac) + k, k = 0 .. half - 1
+    double x0 = (1.0 - frac) * RS_RES;
+    int i0 = (int)x0;
+    float f = (float)(x0 - i0);
+    long n = base + 1;
+    for (int k = 0; k < half; k++, n++) {
+      int i = i0 + k * RS_RES;
+      float w = t[i] + (t[i + 1] - t[i]) * f;
+      al += w * ringl[n & (RS_RING - 1)];
+      ar += w * ringr[n & (RS_RING - 1)];
+    }
   }
   *l = al; *rr = ar;
   r->pos += r->step;

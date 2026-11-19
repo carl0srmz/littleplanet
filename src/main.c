@@ -88,15 +88,28 @@ bool app_load_state(const char *path) {
   FILE *f = u8fopen(path, "rb");
   if (!f) return false;
   fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
+  if (n <= 0) { fclose(f); return false; }
   Ser s = {malloc(n), 0, (size_t)n, true, false};
-  bool ok = fread(s.buf, 1, n, f) == (size_t)n;
+  bool ok = s.buf && fread(s.buf, 1, n, f) == (size_t)n;
   fclose(f);
-  if (ok) mcd_serialize(&s);
+  if (!ok) { free(s.buf); return false; }
+  // a state that fails partway (truncated, corrupt) has already overwritten part of the machine:
+  // keep the running one to put back
+  Ser cur = {0};
+  mcd_serialize(&cur);
+  mcd_serialize(&s);
   free(s.buf);
+  if (s.fail) {
+    cur.cap = cur.pos; cur.pos = 0; cur.load = true;
+    mcd_serialize(&cur);
+    free(cur.buf);
+    return false;
+  }
+  free(cur.buf);
   intro_state_loaded();
   wide_reset();
   wide_check();
-  return ok && !s.fail;
+  return true;
 }
 
 int app_run(const char *disc);

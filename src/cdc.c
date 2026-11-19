@@ -124,12 +124,14 @@ bool cdc_read(u32 *header) {
   return true;
 }
 
-void cdc_trn(u8 *dst, u8 *header) {
+bool cdc_trn(u8 *dst, u8 *header) {
+  if (xfer_pos >= xfer_len) return false;   // no sector read (or it already went by DMA / the host port)
   memcpy(dst, xfer + xfer_pos, xfer_len - xfer_pos);
   header[0] = xfer_header >> 24; header[1] = xfer_header >> 16; header[2] = xfer_header >> 8; header[3] = (u8)xfer_header;
   xfer_pos = xfer_len;
   xfer_active = false;
   mcd.cdc_mode = (mcd.cdc_mode & ~DSR) | EDT;
+  return true;
 }
 
 void cdc_ack(void) { xfer_active = false; }

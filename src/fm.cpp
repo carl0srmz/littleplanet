@@ -68,6 +68,7 @@ void fm_serialize(Ser *s) {
     n = (uint32_t)buf.size();
   }
   SER(s, n);
+  if (s->load && (s->fail || n > s->cap - s->pos)) { s->fail = true; return; }   // (a corrupt length would ask for gigabytes)
   if (s->load) buf.resize(n);
   ser_bytes(s, buf.data(), n);
   if (s->load && !s->fail) {
