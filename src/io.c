@@ -6,7 +6,7 @@
 //
 // A button pressed is reported until the game has read it (both halves, TH high and low), even if it was
 // let go before: a tap between two reads would be lost otherwise. The special stages read the pad only
-// once every 3 or 4 frames (once per frame of their own), so quick taps of the jump button went missing.
+// once every 3 frames (once per frame of their own), so quick taps of the jump button went missing.
 #include "io.h"
 #include "mcd.h"
 

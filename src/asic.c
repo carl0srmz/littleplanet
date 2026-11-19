@@ -1,5 +1,13 @@
 // Mega-CD graphics ASIC: renders rotated/scaled stamp maps into a cell-arranged image buffer
-// in Word RAM, one line per trace vector, at 5*4 sub cycles per dot.
+// in Word RAM, one line per trace vector.
+//
+// Timing, in sub-CPU cycles, by Word RAM accesses (as Genesis Plus GX models it from hardware logs of the
+// chip, MiSTer's graphics_operations_and_68k_wordram_access): per line, 4 reads for the trace vector, 2 per
+// dot (stamp map, stamp pixel) and a read-modify-write per 4 dots written, 3 cycles each. That's about 6.8
+// cycles a dot. (It used to be 20: Genesis Plus GX's older 4 * 5 per dot, which counts the 50 MHz clock,
+// taken as 12.5 MHz sub-CPU cycles, so 4 times too slow. The special stages' floor, 96 lines of 256, then took
+// 2.4 frames instead of 0.6, missed the main CPU's 3-frame step about every other time, and the stage ran
+// at an uneven 15-20 steps a second instead of a steady 20.)
 #include "asic.h"
 #include "mcd.h"
 #include "state.h"
@@ -105,7 +113,8 @@ static void start(void) {
   map_base = ((u32)reg[1] << 2) & mask;
   buf_col_step = (((reg[2] & 0x1f) + 1) << 6) - 7;
   buf_start = (((u32)reg[3] << 3) & 0x7ffc0) + (reg[4] & 0x3f);
-  cycles_per_line = 4 * 5 * (reg[5] & 0x1ff);
+  int w = reg[5] & 0x1ff;
+  cycles_per_line = 3 * (4 + 2 * w + ((w + (reg[4] & 3) + 3) >> 2));
   if (!cycles_per_line) cycles_per_line = 1;
   cycles_left = cycles_per_line;
   busy = true;
@@ -136,15 +145,14 @@ void asic_write(int r, u16 v) {
 void asic_run(u32 cycles) {
   if (!busy) return;
   cycles_left -= (s32)cycles;
-  while (busy && cycles_left <= 0) {
+  while (busy && cycles_left <= 0) {   // a line is written at the end of its time; the last one ends the operation
+    if (reg[6] & 0xff) { render_line(); reg[6] = (reg[6] - 1) & 0xff; }
     if ((reg[6] & 0xff) == 0) {
       busy = false;
       if (asic_side) memcpy(asic_side_px, side_now, sizeof side_now);
       if (mcd.int_mask & 2) mcd_sub_irq(1);
       break;
     }
-    render_line();
-    reg[6] = (reg[6] - 1) & 0xff;
     cycles_left += cycles_per_line;
   }
 }
