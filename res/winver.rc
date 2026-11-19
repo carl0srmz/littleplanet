@@ -5,8 +5,8 @@
 1 24 "res/app.manifest"
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 1,0,0,0
-PRODUCTVERSION 1,0,0,0
+FILEVERSION 1,1,0,0
+PRODUCTVERSION 1,1,0,0
 FILEFLAGSMASK 0x3fL
 FILEFLAGS 0x0L
 FILEOS VOS_NT_WINDOWS32
@@ -19,12 +19,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "Carlos Ramirez"
       VALUE "FileDescription", VER_DESC
-      VALUE "FileVersion", "1.0.0.0"
+      VALUE "FileVersion", "1.1.0.0"
       VALUE "InternalName", VER_NAME
       VALUE "LegalCopyright", "MIT License. Source: github.com/carlosrmz009/littleplanet"
       VALUE "OriginalFilename", VER_NAME
       VALUE "ProductName", "Little Planet"
-      VALUE "ProductVersion", "1.0"
+      VALUE "ProductVersion", "1.1"
       VALUE "Comments", "Open source Sonic CD decompilation and PC port. Built by GitHub Actions from the public source."
     END
   END

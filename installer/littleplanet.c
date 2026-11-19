@@ -123,7 +123,7 @@ static const char *install(void) {
   special(CSIDL_DESKTOPDIRECTORY, APP L".lnk", lnk);
   if (desk) make_link(lnk, exe); else DeleteFileW(lnk);
   wchar_t cmd[MAX_PATH + 32]; swprintf(cmd, MAX_PATH + 32, L"\"%s\" --uninstall", un);
-  reg_sz(UNKEY, L"DisplayName", APP); reg_sz(UNKEY, L"DisplayIcon", exe); reg_sz(UNKEY, L"DisplayVersion", L"1.0");
+  reg_sz(UNKEY, L"DisplayName", APP); reg_sz(UNKEY, L"DisplayIcon", exe); reg_sz(UNKEY, L"DisplayVersion", L"1.1");
   reg_sz(UNKEY, L"Publisher", L"carlos ramirez"); reg_sz(UNKEY, L"InstallLocation", dir); reg_sz(UNKEY, L"UninstallString", cmd);
   reg_dw(UNKEY, L"NoModify", 1); reg_dw(UNKEY, L"NoRepair", 1); reg_dw(UNKEY, L"EstimatedSize", (n + payload_bytes) / 1024);
   reg_sz(APKEY, NULL, exe); reg_sz(APKEY, L"Path", dir);

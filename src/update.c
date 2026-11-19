@@ -10,18 +10,22 @@
 
 extern const char build_id[];
 
-#define REPO "https://github.com/carlosrmz009/littleplanet"
-#define TAG_API "https://api.github.com/repos/carlosrmz009/littleplanet/git/ref/tags/1.0"
+// Updates follow the latest release (whatever its version): its tag is moved to each build the release
+// gets, so a copy is up to date when its build is the commit that tag names.
+#define OWNER_REPO "carl0srmz/littleplanet"
+#define REPO "https://github.com/" OWNER_REPO
+#define API_PATH "/repos/" OWNER_REPO
 
 static volatile int state;
 static char tmp[1024];
+static char tag[32];   // the latest release's tag (checked to be [0-9A-Za-z._-]: it goes into URLs and a shell command)
 
 #ifdef _WIN32
 // Windows: the check reads GitHub's answer in memory, and "Update" opens the release page in the browser.
 // (A game that downloads an .exe and runs it is what antivirus heuristics call a trojan downloader.)
 static bool get(const wchar_t *host, const wchar_t *path, char *out, int max) {
   bool ok = false; int n = 0;
-  HINTERNET s = WinHttpOpen(L"LittlePlanet/1.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, NULL, NULL, 0), c = NULL, r = NULL;
+  HINTERNET s = WinHttpOpen(L"LittlePlanet/" LP_VERSION_WNUM, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, NULL, NULL, 0), c = NULL, r = NULL;
   if (s) c = WinHttpConnect(s, host, INTERNET_DEFAULT_HTTPS_PORT, 0);
   if (c) r = WinHttpOpenRequest(c, L"GET", path, NULL, NULL, NULL, WINHTTP_FLAG_SECURE);
   if (r && WinHttpSendRequest(r, L"User-Agent: LittlePlanet\r\n", (DWORD)-1, NULL, 0, 0, 0) && WinHttpReceiveResponse(r, NULL)) {
@@ -54,26 +58,58 @@ static void tmp_path(const char *name) {
 }
 #endif
 
-static int check(void *arg) {
-  char buf[4096] = "";
+// GitHub's API, path from api.github.com, into buf
+static void api_get(const char *path, char *buf, int max) {
+  buf[0] = 0;
 #ifdef _WIN32
-  get(L"api.github.com", L"/repos/carlosrmz009/littleplanet/git/ref/tags/1.0", buf, sizeof buf);
+  wchar_t wp[256];
+  MultiByteToWideChar(CP_UTF8, 0, path, -1, wp, 256);
+  get(L"api.github.com", wp, buf, max);
 #else
-  tmp_path("littleplanet-tag.json");
-  FILE *f = fetch(TAG_API, tmp) ? fopen(tmp, "rb") : NULL;
-  if (f) { buf[fread(buf, 1, sizeof buf - 1, f)] = 0; fclose(f); remove(tmp); }
+  char url[512]; snprintf(url, sizeof url, "https://api.github.com%s", path);
+  tmp_path("littleplanet-api.json");
+  FILE *f = fetch(url, tmp) ? fopen(tmp, "rb") : NULL;
+  if (f) { buf[fread(buf, 1, max - 1, f)] = 0; fclose(f); remove(tmp); }
 #endif
-  char *p = strstr(buf, "\"sha\"");
-  if (p) p = strchr(p + 5, '"');
-  if (!p || strlen(p) < 41) { state = 0; return 0; }
-  state = strncmp(p + 1, build_id, 40) ? 3 : 2;
+}
+
+// the string value of "key" in a JSON text, if it's a plain one (no escapes) that fits
+static bool json_str(const char *buf, const char *key, char *out, int max) {
+  char k[64]; snprintf(k, sizeof k, "\"%s\"", key);
+  const char *p = strstr(buf, k);
+  if (!p) return false;
+  p += strlen(k);
+  while (*p == ' ' || *p == ':') p++;
+  if (*p++ != '"') return false;
+  int n = 0;
+  while (p[n] && p[n] != '"') { if (p[n] == '\\' || n >= max - 1) return false; n++; }
+  if (p[n] != '"') return false;
+  memcpy(out, p, n); out[n] = 0;
+  return true;
+}
+
+static int check(void *arg) {
+  (void)arg;
+  static char buf[16384];   // (the release's JSON names its tag after its author; the assets come later)
+  char t[32], sha[64];
+  api_get(API_PATH "/releases/latest", buf, sizeof buf);
+  if (!json_str(buf, "tag_name", t, sizeof t) || !t[0]) { state = 0; return 0; }
+  for (const char *c = t; *c; c++)
+    if (!((*c >= '0' && *c <= '9') || (*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || *c == '.' || *c == '_' || *c == '-')) { state = 0; return 0; }
+  char path[128]; snprintf(path, sizeof path, API_PATH "/git/ref/tags/%s", t);
+  api_get(path, buf, sizeof buf);
+  if (!json_str(buf, "sha", sha, sizeof sha) || strlen(sha) != 40) { state = 0; return 0; }
+  snprintf(tag, sizeof tag, "%s", t);
+  state = strncmp(sha, build_id, 40) ? 3 : 2;
   return 0;
 }
 
 #ifndef _WIN32
 static int download(void *arg) {
+  (void)arg;
+  char url[256]; snprintf(url, sizeof url, REPO "/releases/download/%s/" ASSET, tag);
   tmp_path(ASSET);
-  state = fetch(REPO "/releases/download/1.0/" ASSET, tmp) ? 5 : 6;
+  state = fetch(url, tmp) ? 5 : 6;
   return 0;
 }
 #endif
@@ -90,7 +126,11 @@ const char *update_label(void) {
 
 bool update_ready(void) { return state == 3; }
 #ifdef _WIN32
-void update_download(void) { if (state == 3) ShellExecuteA(NULL, "open", REPO "/releases/tag/1.0", NULL, NULL, SW_SHOWNORMAL); }
+void update_download(void) {
+  if (state != 3) return;
+  char url[256]; snprintf(url, sizeof url, REPO "/releases/tag/%s", tag);
+  ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWNORMAL);
+}
 #else
 void update_download(void) { if (state == 3) { state = 4; plat_thread(download); } }
 #endif
@@ -109,7 +149,7 @@ bool update_apply(void) {
       char c[1200]; snprintf(c, sizeof c, "'%s' >/dev/null 2>&1 &", a);
       system(c);
     } else { state = 6; return false; }
-  } else system("xdg-open '" REPO "/releases/tag/1.0' >/dev/null 2>&1 &");
+  } else { char c[300]; snprintf(c, sizeof c, "xdg-open '" REPO "/releases/tag/%s' >/dev/null 2>&1 &", tag); system(c); }
 #endif
   state = 7;
   return true;

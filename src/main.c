@@ -13,7 +13,7 @@
 #include "movie.h"
 #include "recomp.h"
 
-#define LP_VERSION "Little Planet 1.0"
+#define LP_VERSION "Little Planet " LP_VERSION_NUM
 
 static void write_bmp(const char *path, const u32 *pix, int w, int h) {
   FILE *f = u8fopen(path, "wb");

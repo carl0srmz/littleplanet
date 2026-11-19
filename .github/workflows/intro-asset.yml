@@ -34,5 +34,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view intro >/dev/null 2>&1 || gh release create intro --prerelease --latest=false --title "Remastered opening" \
-            --notes "The remastered opening bundled with Little Planet: Sonic CD's Japanese opening in 4K 60 fps by LuanUP (https://www.youtube.com/@LuanUP), used with permission. Not a game release; get the game from the 1.0 release."
+            --notes "The remastered opening bundled with Little Planet: Sonic CD's Japanese opening in 4K 60 fps by LuanUP (https://www.youtube.com/@LuanUP), used with permission. Not a game release; get the game from the latest release."
           gh release upload intro intro.mkv --clobber

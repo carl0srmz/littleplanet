@@ -420,24 +420,36 @@ jobs:
       - name: release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: '1.1'   # also in src/app.h (LP_VERSION_NUM), res/winver.rc, res/Info.plist, installer/littleplanet.c
         run: |
-          gh release view 1.0 >/dev/null 2>&1 || gh release create 1.0 --title "1.0" --notes "Run littleplanet.exe to install. You need your own Sonic CD (Mega-CD) disc image: cue/bin, chd, iso or ccd."
-          gh release upload 1.0 dist/littleplanet.exe dist/littleplanet-windows-portable.zip dist/SHA256SUMS.txt --clobber
+          gh release view "$VERSION" >/dev/null 2>&1 || gh release create "$VERSION" --latest --title "$VERSION" --notes "Run littleplanet.exe to install. You need your own Sonic CD (Mega-CD) disc image: cue/bin, chd, iso or ccd."
+          files="dist/littleplanet.exe dist/littleplanet-windows-portable.zip dist/SHA256SUMS.txt"
           notes="Windows: run littleplanet.exe to install, or unzip littleplanet-windows-portable.zip and run Little Planet.exe."
           if [ -f dist/littleplanet-macos.dmg ]; then
-            gh release upload 1.0 dist/littleplanet-macos.dmg --clobber
+            files="$files dist/littleplanet-macos.dmg"
             notes="$notes Mac: open littleplanet-macos.dmg and run Little Planet to install. It isn't notarized, so the first time right-click it and pick Open (macOS 15: System Settings > Privacy & Security > Open Anyway)."
           fi
           if [ -f dist/littleplanet-linux.AppImage ]; then
-            gh release upload 1.0 dist/littleplanet-linux.AppImage --clobber
+            files="$files dist/littleplanet-linux.AppImage"
             notes="$notes Linux: make littleplanet-linux.AppImage executable (chmod +x) and run it to install."
           fi
           if [ -f dist/littleplanet-linux-aarch64.AppImage ]; then
-            gh release upload 1.0 dist/littleplanet-linux-aarch64.AppImage --clobber
+            files="$files dist/littleplanet-linux-aarch64.AppImage"
             notes="$notes ARM Linux: use littleplanet-linux-aarch64.AppImage."
           fi
           notes="$notes You need your own Sonic CD (Mega-CD) disc image: cue/bin, chd, iso or ccd."
           notes="$notes"$'\n\n'"Every file here is built by GitHub Actions from this repository's source (commit ${GITHUB_SHA}). Check a download with: gh attestation verify FILE --repo ${GITHUB_REPOSITORY} (or compare it with SHA256SUMS.txt). Some antivirus engines flag new, unsigned games by heuristics; the source is all here."
-          gh release edit 1.0 --notes "$notes"
-          git tag -f 1.0
-          git push -f origin refs/tags/1.0
+          gh release upload "$VERSION" $files --clobber
+          gh release edit "$VERSION" --notes "$notes" --latest
+          # the in-app update check follows this tag (src/update.c): it names the build the release has now
+          git tag -f "$VERSION"
+          git push -f origin "refs/tags/$VERSION"
+          # Copies installed from 1.0 check the 1.0 tag and download from the 1.0 release (1.1 on follow the
+          # latest release instead). Once, the first 1.1 build goes there too, so they update to it and from
+          # then on find newer releases by themselves; the 1.0 release then stays as it is.
+          if gh release view 1.0 >/dev/null 2>&1 && ! gh release view 1.0 --json body -q .body | grep -q "^Superseded by"; then
+            gh release upload 1.0 $files --clobber
+            gh release edit 1.0 --latest=false --notes "Superseded by ${VERSION}: https://github.com/${GITHUB_REPOSITORY}/releases/latest. The files here are the first ${VERSION} build (commit ${GITHUB_SHA}), so copies of 1.0 that check for updates move to ${VERSION}."
+            git tag -f 1.0
+            git push -f origin refs/tags/1.0
+          fi

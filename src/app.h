@@ -1,4 +1,8 @@
 #pragma once
+// the release (also in res/winver.rc, res/Info.plist, installer/littleplanet.c and the release job in
+// .github/workflows/build.yml)
+#define LP_VERSION_NUM "1.1"
+#define LP_VERSION_WNUM L"1.1"
 #include "mcd.h"
 #include "gfx.h"
 #include "movie.h"
